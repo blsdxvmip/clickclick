@@ -222,8 +222,8 @@
 <body>
     <h1>🎮 Кликер</h1>
     <div class="score" id="score">Загрузка...</div>
-    <button class="main-btn" id="clickBtn">Клик!</button>
-    <div class="upgrades">
+    <button class="main-btn" id="clickBtn" style="display:none;">Клик!</button>
+    <div class="upgrades" id="upgrades" style="display:none;">
         <div class="upgrade-card">
             <div class="upgrade-title">Авто-клик</div>
             <div class="upgrade-count" id="autoClickCount">0</div>
@@ -244,155 +244,164 @@
         <div class="boost-bar-inner" id="boostBarInner" style="width:0%"></div>
     </div>
     <button class="chest-btn" id="chestBtn" style="display:none;">Открыть сундук 🎁</button>
-    <button class="daily-btn" id="dailyBtn">Ежедневный бонус</button>
+    <button class="daily-btn" id="dailyBtn" style="display:none;">Ежедневный бонус</button>
     <div class="info" id="info"></div>
     <div class="achievements" id="achievements"></div>
     <div class="theme-btns" id="themeBtns"></div>
     <canvas class="confetti" id="confetti" style="display:none;"></canvas>
+    <div id="error" style="color:#ff4444;font-size:1.2em;margin-top:30px;display:none;"></div>
     <script>
         let user_id = null;
+        // Получаем user_id только из Telegram WebApp
         if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) {
             user_id = Telegram.WebApp.initDataUnsafe.user.id;
+        }
+        if (!user_id) {
+            document.getElementById('score').style.display = 'none';
+            document.getElementById('error').style.display = '';
+            document.getElementById('error').innerText = 'Ошибка: Запускайте кликер только через Telegram-бота!';
         } else {
-            user_id = prompt('Введите ваш user_id (для теста):');
-        }
-        let lastScore = 0;
-        async function fetchStatus() {
-            const res = await fetch(`/api/get?user_id=${user_id}`);
-            const data = await res.json();
-            document.getElementById('score').innerText = `Ваш счет: ${data.score}`;
-            document.getElementById('autoClickCount').innerText = data.upgrades?.auto_click || 0;
-            document.getElementById('multiplierCount').innerText = data.upgrades?.multiplier || 0;
-            document.getElementById('boostCount').innerText = data.upgrades?.boost || 0;
-            let mult = 1 + (data.upgrades?.multiplier || 0);
-            let info = `Множитель: x${mult}`;
-            if (data.boost_until && data.boost_until > Date.now()/1000) {
-                mult *= 3;
-                let left = Math.floor(data.boost_until - Date.now()/1000);
-                info += ` | Буст активен: x3 (${left} сек.)`;
-                document.getElementById('boostBar').style.display = '';
-                let percent = Math.max(0, Math.min(100, 100 * left / 120));
-                document.getElementById('boostBarInner').style.width = percent + '%';
-            } else {
-                document.getElementById('boostBar').style.display = 'none';
-            }
-            // Прогресс до сундука
-            let clicks = data.clicks || 0;
-            let toChest = 50 - (clicks % 50);
-            info += ` | До сундука: ${toChest}`;
-            // Сундук
-            document.getElementById('chestBtn').style.display = data.chest_ready ? '' : 'none';
-            // Ачивки
-            let achs = data.achievements || [];
-            let achHtml = '';
-            if (achs.includes('100_clicks')) achHtml += '<span class="ach">💯 100 кликов</span>';
-            if (achs.includes('10_mult')) achHtml += '<span class="ach">🔟 10 множителей</span>';
-            document.getElementById('achievements').innerHTML = achHtml;
-            // Темы
-            fetchThemes(data.theme);
-            lastScore = data.score;
-        }
-        document.getElementById('clickBtn').onclick = async () => {
-            let btn = document.getElementById('clickBtn');
-            btn.classList.add('pulse');
-            setTimeout(()=>btn.classList.remove('pulse'), 300);
-            const res = await fetch(`/api/click?user_id=${user_id}`, {method: 'POST'});
-            const data = await res.json();
-            fetchStatus();
-            if (data.is_crit) {
-                btn.classList.add('crit');
-                showConfetti();
-                setTimeout(()=>btn.classList.remove('crit'), 400);
-            }
-            if (data.chest) {
-                document.getElementById('chestBtn').style.display = '';
-            }
-            if (data.new_ach) {
-                showConfetti();
-            }
-        };
-        document.getElementById('autoClickBtn').onclick = async () => {
-            await fetch(`/api/upgrade?user_id=${user_id}&type=auto_click`, {method: 'POST'});
-            fetchStatus();
-            showConfetti();
-        };
-        document.getElementById('multiplierBtn').onclick = async () => {
-            await fetch(`/api/upgrade?user_id=${user_id}&type=multiplier`, {method: 'POST'});
-            fetchStatus();
-            showConfetti();
-        };
-        document.getElementById('boostBtn').onclick = async () => {
-            await fetch(`/api/upgrade?user_id=${user_id}&type=boost`, {method: 'POST'});
-            fetchStatus();
-            showConfetti();
-        };
-        document.getElementById('chestBtn').onclick = async () => {
-            const res = await fetch(`/api/chest?user_id=${user_id}`, {method: 'POST'});
-            const data = await res.json();
-            alert(data.msg);
-            fetchStatus();
-            showConfetti();
-        };
-        document.getElementById('dailyBtn').onclick = async () => {
-            const res = await fetch(`/api/daily?user_id=${user_id}`, {method: 'POST'});
-            const data = await res.json();
-            alert(data.msg);
-            fetchStatus();
-            showConfetti();
-        };
-        async function fetchThemes(current) {
-            const res = await fetch('/api/themes');
-            const data = await res.json();
-            let html = '';
-            for (let t of data.themes) {
-                html += `<button class="theme-btn${current===t?' selected':''}" onclick="setTheme('${t}')">${t}</button>`;
-            }
-            document.getElementById('themeBtns').innerHTML = html;
-        }
-        window.setTheme = async function(theme) {
-            await fetch(`/api/theme?user_id=${user_id}&theme=${theme}`, {method: 'POST'});
-            if (theme==='default') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #232526 0%, #414345 100%)');
-            if (theme==='dark') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #141e30 0%, #243b55 100%)');
-            if (theme==='neon') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #00c3ff 0%, #ffff1c 100%)');
-            if (theme==='sunset') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #ff512f 0%, #dd2476 100%)');
-            fetchStatus();
-        }
-        // Конфетти
-        function showConfetti() {
-            let canvas = document.getElementById('confetti');
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            canvas.style.display = '';
-            let ctx = canvas.getContext('2d');
-            let pieces = [];
-            for (let i=0; i<80; ++i) {
-                pieces.push({
-                    x: Math.random()*canvas.width,
-                    y: Math.random()*canvas.height/2,
-                    r: 6+Math.random()*8,
-                    c: `hsl(${Math.random()*360},100%,60%)`,
-                    v: 2+Math.random()*4
-                });
-            }
-            let t=0;
-            function draw() {
-                ctx.clearRect(0,0,canvas.width,canvas.height);
-                for (let p of pieces) {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, p.r, 0, 2*Math.PI);
-                    ctx.fillStyle = p.c;
-                    ctx.fill();
-                    p.y += p.v;
-                    if (p.y > canvas.height) p.y = -10;
+            document.getElementById('clickBtn').style.display = '';
+            document.getElementById('upgrades').style.display = '';
+            document.getElementById('dailyBtn').style.display = '';
+            let lastScore = 0;
+            async function fetchStatus() {
+                const res = await fetch(`/api/get?user_id=${user_id}`);
+                const data = await res.json();
+                document.getElementById('score').innerText = `Ваш счет: ${data.score}`;
+                document.getElementById('autoClickCount').innerText = data.upgrades?.auto_click || 0;
+                document.getElementById('multiplierCount').innerText = data.upgrades?.multiplier || 0;
+                document.getElementById('boostCount').innerText = data.upgrades?.boost || 0;
+                let mult = 1 + (data.upgrades?.multiplier || 0);
+                let info = `Множитель: x${mult}`;
+                if (data.boost_until && data.boost_until > Date.now()/1000) {
+                    mult *= 3;
+                    let left = Math.floor(data.boost_until - Date.now()/1000);
+                    info += ` | Буст активен: x3 (${left} сек.)`;
+                    document.getElementById('boostBar').style.display = '';
+                    let percent = Math.max(0, Math.min(100, 100 * left / 120));
+                    document.getElementById('boostBarInner').style.width = percent + '%';
+                } else {
+                    document.getElementById('boostBar').style.display = 'none';
                 }
-                t++;
-                if (t<40) requestAnimationFrame(draw);
-                else canvas.style.display = 'none';
+                // Прогресс до сундука
+                let clicks = data.clicks || 0;
+                let toChest = 50 - (clicks % 50);
+                info += ` | До сундука: ${toChest}`;
+                // Сундук
+                document.getElementById('chestBtn').style.display = data.chest_ready ? '' : 'none';
+                // Ачивки
+                let achs = data.achievements || [];
+                let achHtml = '';
+                if (achs.includes('100_clicks')) achHtml += '<span class="ach">💯 100 кликов</span>';
+                if (achs.includes('10_mult')) achHtml += '<span class="ach">🔟 10 множителей</span>';
+                document.getElementById('achievements').innerHTML = achHtml;
+                // Темы
+                fetchThemes(data.theme);
+                lastScore = data.score;
             }
-            draw();
+            document.getElementById('clickBtn').onclick = async () => {
+                let btn = document.getElementById('clickBtn');
+                btn.classList.add('pulse');
+                setTimeout(()=>btn.classList.remove('pulse'), 300);
+                const res = await fetch(`/api/click?user_id=${user_id}`, {method: 'POST'});
+                const data = await res.json();
+                fetchStatus();
+                if (data.is_crit) {
+                    btn.classList.add('crit');
+                    showConfetti();
+                    setTimeout(()=>btn.classList.remove('crit'), 400);
+                }
+                if (data.chest) {
+                    document.getElementById('chestBtn').style.display = '';
+                }
+                if (data.new_ach) {
+                    showConfetti();
+                }
+            };
+            document.getElementById('autoClickBtn').onclick = async () => {
+                await fetch(`/api/upgrade?user_id=${user_id}&type=auto_click`, {method: 'POST'});
+                fetchStatus();
+                showConfetti();
+            };
+            document.getElementById('multiplierBtn').onclick = async () => {
+                await fetch(`/api/upgrade?user_id=${user_id}&type=multiplier`, {method: 'POST'});
+                fetchStatus();
+                showConfetti();
+            };
+            document.getElementById('boostBtn').onclick = async () => {
+                await fetch(`/api/upgrade?user_id=${user_id}&type=boost`, {method: 'POST'});
+                fetchStatus();
+                showConfetti();
+            };
+            document.getElementById('chestBtn').onclick = async () => {
+                const res = await fetch(`/api/chest?user_id=${user_id}`, {method: 'POST'});
+                const data = await res.json();
+                alert(data.msg);
+                fetchStatus();
+                showConfetti();
+            };
+            document.getElementById('dailyBtn').onclick = async () => {
+                const res = await fetch(`/api/daily?user_id=${user_id}`, {method: 'POST'});
+                const data = await res.json();
+                alert(data.msg);
+                fetchStatus();
+                showConfetti();
+            };
+            async function fetchThemes(current) {
+                const res = await fetch('/api/themes');
+                const data = await res.json();
+                let html = '';
+                for (let t of data.themes) {
+                    html += `<button class="theme-btn${current===t?' selected':''}" onclick="setTheme('${t}')">${t}</button>`;
+                }
+                document.getElementById('themeBtns').innerHTML = html;
+            }
+            window.setTheme = async function(theme) {
+                await fetch(`/api/theme?user_id=${user_id}&theme=${theme}`, {method: 'POST'});
+                if (theme==='default') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #232526 0%, #414345 100%)');
+                if (theme==='dark') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #141e30 0%, #243b55 100%)');
+                if (theme==='neon') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #00c3ff 0%, #ffff1c 100%)');
+                if (theme==='sunset') document.body.style.setProperty('--bg', 'linear-gradient(135deg, #ff512f 0%, #dd2476 100%)');
+                fetchStatus();
+            }
+            // Конфетти
+            function showConfetti() {
+                let canvas = document.getElementById('confetti');
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                canvas.style.display = '';
+                let ctx = canvas.getContext('2d');
+                let pieces = [];
+                for (let i=0; i<80; ++i) {
+                    pieces.push({
+                        x: Math.random()*canvas.width,
+                        y: Math.random()*canvas.height/2,
+                        r: 6+Math.random()*8,
+                        c: `hsl(${Math.random()*360},100%,60%)`,
+                        v: 2+Math.random()*4
+                    });
+                }
+                let t=0;
+                function draw() {
+                    ctx.clearRect(0,0,canvas.width,canvas.height);
+                    for (let p of pieces) {
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.r, 0, 2*Math.PI);
+                        ctx.fillStyle = p.c;
+                        ctx.fill();
+                        p.y += p.v;
+                        if (p.y > canvas.height) p.y = -10;
+                    }
+                    t++;
+                    if (t<40) requestAnimationFrame(draw);
+                    else canvas.style.display = 'none';
+                }
+                draw();
+            }
+            fetchStatus();
+            setInterval(fetchStatus, 2000);
         }
-        fetchStatus();
-        setInterval(fetchStatus, 2000);
     </script>
 </body>
 </html> 
